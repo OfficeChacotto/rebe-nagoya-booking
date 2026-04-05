@@ -607,12 +607,15 @@ function App() {
       {/* ── Main ── */}
       <main className="max-w-6xl mx-auto px-4 py-6">
         <div className="grid grid-cols-1 lg:grid-cols-5 gap-6">
-          {/* Calendar */}
-          <div className="lg:col-span-2">
+          {/* Calendar + Floor image */}
+          <div className="lg:col-span-2 flex flex-col gap-6">
             <Calendar
               bookings={bookings} selected={selectedDate}
               onSelect={setSelectedDate} month={month} onMonth={changeMonth}
             />
+            <div className="bg-white rounded-2xl shadow-lg overflow-hidden">
+              <img src="floorplan.png" alt="オフィス平面図" className="w-full h-auto object-contain"/>
+            </div>
           </div>
 
           {/* Day panel */}
