@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>リベ名古屋オフィス 予約マップ</title>
+  <title>リベ名古屋オフィス コミュニケーションツール</title>
   <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
   <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
   <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
@@ -23,7 +23,6 @@
 const { useState, useEffect, useCallback } = React;
 
 // ─── FIREBASE CONFIG ──────────────────────────────────────────
-// ※ Firebaseコンソールから取得した値に書き換えてください
 const FIREBASE_CONFIG = {
   apiKey:            "AIzaSyAH9BWp9z53g_J7dS7aQ1pD2K61IRT8zEo",
   authDomain:        "rebe-nagoya-booking.firebaseapp.com",
@@ -36,7 +35,6 @@ firebase.initializeApp(FIREBASE_CONFIG);
 const db = firebase.firestore();
 
 // ─── CONSTANTS ────────────────────────────────────────────────
-// SVG viewBox = 700×516, 画像も同サイズでフィット（preserveAspectRatio="none"）
 const AREAS = [
   { id:'area_cafe',       name:'カフェエリア',              color:'#7C3AED', x:5,   y:100, w:128, h:172 },
   { id:'area_photo',      name:'フォトスポット',            color:'#EA580C', x:143, y:110, w:112, h:158 },
@@ -55,7 +53,6 @@ const genTimes = (fromH, toH) => {
 const ALL_TIMES   = genTimes(8, 22);
 const START_TIMES = ALL_TIMES.slice(0, -1);
 const END_TIMES   = ALL_TIMES.slice(1);
-const STORAGE_KEY = 'rebe_nagoya_bookings';
 const MAX_ATTENDEES = 90;
 const DOW = ['日','月','火','水','木','金','土'];
 
@@ -74,7 +71,6 @@ function FloorPlan({ selected, onToggle }) {
     const cx = area.x + area.w/2;
     const cy = area.y + area.h/2;
     const isSel = selected.includes(area.id);
-    // split long names
     let lines;
     if (area.name === 'オープンコミュニティエリア') lines = ['オープン','コミュニティ','エリア'];
     else if (area.name === 'パブリックエリア') lines = ['パブリック','エリア'];
@@ -86,7 +82,6 @@ function FloorPlan({ selected, onToggle }) {
     const baseY = cy - totalH/2 + lineH/2 + (isSel ? -8 : 0);
     return (
       <g key={`label-${area.id}`} style={{pointerEvents:'none'}}>
-        {/* テキスト背景（視認性向上） */}
         {lines.map((l,i) => (
           <text key={`bg-${i}`} x={cx} y={baseY+i*lineH}
             textAnchor="middle" dominantBaseline="middle"
@@ -117,7 +112,6 @@ function FloorPlan({ selected, onToggle }) {
     <div className="relative">
       <svg viewBox="0 0 700 516" className="w-full rounded-xl border-2 border-slate-200"
         style={{maxHeight:'300px', background:'#e2e8f0'}}>
-        {/* 実際の平面図画像を背景として使用 */}
         <image href="floorplan.png" x="0" y="0" width="700" height="516"
           preserveAspectRatio="none"/>
         {AREAS.map(area => {
@@ -159,7 +153,7 @@ function DuplicateModal({ dups, newBooking, onConfirm, onCancel }) {
           <h2 className="text-lg font-black">エリアの重複があります</h2>
         </div>
         <div className="p-5 space-y-3 max-h-[55vh] overflow-y-auto">
-          <p className="text-red-700 font-semibold text-sm">以下の予約とエリアが重複しています：</p>
+          <p className="text-red-700 font-semibold text-sm">以下の登録とエリアが重複しています：</p>
           {dups.map(dup => {
             const dupAreas = dup.areas.filter(a=>newBooking.areas.includes(a))
               .map(a=>AREAS.find(x=>x.id===a)?.name).join('・');
@@ -168,8 +162,6 @@ function DuplicateModal({ dups, newBooking, onConfirm, onCancel }) {
                 <p className="font-bold text-gray-900">{dup.hostName} さん</p>
                 <p className="text-sm text-gray-500">{dup.startTime}〜{dup.endTime}</p>
                 <p className="text-sm text-red-600 font-semibold">重複エリア：{dupAreas}</p>
-                <a href={dup.profileUrl} target="_blank" rel="noopener noreferrer"
-                  className="text-sm text-blue-600 hover:underline block">プロフィールを見る →</a>
                 <div className="bg-amber-50 border border-amber-200 rounded-lg p-2.5 mt-1">
                   <p className="text-sm text-gray-700">
                     場所が重なっています。<strong>{dup.hostName}</strong> さんのプロフィールからご連絡・調整をお願いします 🙏
@@ -199,7 +191,7 @@ function DeleteDialog({ booking, onConfirm, onCancel }) {
   return (
     <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4">
       <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm p-6 space-y-4">
-        <h3 className="text-lg font-black text-gray-900">予約を削除しますか？</h3>
+        <h3 className="text-lg font-black text-gray-900">登録を削除しますか？</h3>
         <div className="bg-slate-50 rounded-xl p-4 space-y-1">
           <p className="font-bold text-gray-800">{booking.hostName} さん</p>
           <p className="text-sm text-slate-500">{fmtDate(booking.date)}</p>
@@ -221,8 +213,18 @@ function DeleteDialog({ booking, onConfirm, onCancel }) {
 }
 
 // ─── BOOKING FORM ─────────────────────────────────────────────
-function BookingForm({ initialDate, bookings, onSave, onClose }) {
-  const [form, setForm] = useState({
+function BookingForm({ initialDate, initialData, bookings, onSave, onUpdate, onClose }) {
+  const isEditing = !!initialData;
+  const [form, setForm] = useState(isEditing ? {
+    date:         initialData.date,
+    startTime:    initialData.startTime,
+    endTime:      initialData.endTime,
+    hostName:     initialData.hostName,
+    profileUrl:   initialData.profileUrl,
+    attendees:    String(initialData.attendees),
+    hasProjector: initialData.hasProjector,
+    areas:        initialData.areas,
+  } : {
     date:         initialDate || todayStr(),
     startTime:    '10:00',
     endTime:      '12:00',
@@ -270,6 +272,7 @@ function BookingForm({ initialDate, bookings, onSave, onClose }) {
     if (!isValid) return;
     const dups = bookings.filter(b =>
       b.date === form.date &&
+      (isEditing ? b.id !== initialData.id : true) &&
       overlap(form.startTime, form.endTime, b.startTime, b.endTime) &&
       areaOvl(form.areas, b.areas)
     );
@@ -278,12 +281,17 @@ function BookingForm({ initialDate, bookings, onSave, onClose }) {
   };
 
   const doSave = () => {
-    onSave({
+    const data = {
       date:form.date, startTime:form.startTime, endTime:form.endTime,
       hostName:form.hostName.trim(), profileUrl:form.profileUrl.trim(),
       attendees:Number(form.attendees), hasProjector:form.hasProjector,
-      areas:form.areas, createdAt:new Date().toISOString(),
-    });
+      areas:form.areas,
+    };
+    if (isEditing) {
+      onUpdate(initialData.id, data);
+    } else {
+      onSave({ ...data, createdAt:new Date().toISOString() });
+    }
     onClose();
   };
 
@@ -298,7 +306,7 @@ function BookingForm({ initialDate, bookings, onSave, onClose }) {
       <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[92vh] flex flex-col">
         {/* header */}
         <div className="bg-gradient-to-r from-slate-900 to-slate-700 text-white px-6 py-4 rounded-t-2xl flex justify-between items-center flex-shrink-0">
-          <h2 className="text-xl font-black">予約を追加</h2>
+          <h2 className="text-xl font-black">{isEditing ? '登録を編集' : '登録を追加'}</h2>
           <button onClick={onClose} className="text-slate-300 hover:text-white text-3xl leading-none w-8 h-8 flex items-center justify-center">&times;</button>
         </div>
 
@@ -409,7 +417,7 @@ function BookingForm({ initialDate, bookings, onSave, onClose }) {
                 ? 'bg-gradient-to-r from-slate-900 to-slate-700 hover:from-slate-800 hover:to-slate-600'
                 : 'bg-gray-300 cursor-not-allowed'
             }`}>
-            登録する
+            {isEditing ? '変更を保存する' : '登録する'}
           </button>
         </div>
       </div>
@@ -418,7 +426,7 @@ function BookingForm({ initialDate, bookings, onSave, onClose }) {
 }
 
 // ─── BOOKING CARD ─────────────────────────────────────────────
-function BookingCard({ booking, allBookings, onDelete }) {
+function BookingCard({ booking, allBookings, onEdit, onDelete }) {
   const areaObjs = booking.areas.map(id=>AREAS.find(a=>a.id===id)).filter(Boolean);
   const isDup = allBookings.some(o =>
     o.id !== booking.id && o.date === booking.date &&
@@ -442,10 +450,16 @@ function BookingCard({ booking, allBookings, onDelete }) {
           </div>
           <p className="text-sm text-slate-500 mt-0.5 font-medium">{booking.startTime}〜{booking.endTime}</p>
         </div>
-        <button onClick={()=>onDelete(booking)}
-          className="flex-shrink-0 text-xs text-red-400 hover:text-red-600 hover:bg-red-50 px-2.5 py-1 rounded-lg transition font-medium">
-          削除
-        </button>
+        <div className="flex items-center gap-1 flex-shrink-0">
+          <button onClick={()=>onEdit(booking)}
+            className="text-xs text-blue-400 hover:text-blue-600 hover:bg-blue-50 px-2.5 py-1 rounded-lg transition font-medium">
+            変更
+          </button>
+          <button onClick={()=>onDelete(booking)}
+            className="text-xs text-red-400 hover:text-red-600 hover:bg-red-50 px-2.5 py-1 rounded-lg transition font-medium">
+            削除
+          </button>
+        </div>
       </div>
       <div className="flex flex-wrap gap-1.5">
         {areaObjs.map(a=>(
@@ -458,10 +472,6 @@ function BookingCard({ booking, allBookings, onDelete }) {
         <span>👥 {booking.attendees}名</span>
         <span>{booking.hasProjector ? '📽 プロジェクターあり' : '📵 プロジェクターなし'}</span>
       </div>
-      <a href={booking.profileUrl} target="_blank" rel="noopener noreferrer"
-        className="inline-flex items-center gap-1 text-xs text-blue-600 hover:text-blue-800 hover:underline">
-        プロフィールを見る →
-      </a>
     </div>
   );
 }
@@ -531,16 +541,15 @@ function Calendar({ bookings, selected, onSelect, month, onMonth }) {
 // ─── TIMELINE CHART ───────────────────────────────────────────
 function TimelineChart({ bookings }) {
   const START_H = 8, END_H = 22;
-  const SLOT_H  = 18;  // px per 30min
-  const COL_W   = 72;  // px per area column
-  const LABEL_W = 38;  // time label width
+  const SLOT_H  = 18;
+  const COL_W   = 72;
+  const LABEL_W = 38;
   const HEADER_H = 40;
   const chartH  = (END_H - START_H) * 2 * SLOT_H;
 
   const yFromTime = t => (toMin(t) - START_H * 60) / 30 * SLOT_H;
   const hFromSpan = (s, e) => (toMin(e) - toMin(s)) / 30 * SLOT_H;
 
-  // Assign lanes within each area to handle overlaps
   const getLanes = bks => {
     const sorted = [...bks].sort((a,b)=>toMin(a.startTime)-toMin(b.startTime));
     const ends = [];
@@ -553,14 +562,12 @@ function TimelineChart({ bookings }) {
     return result.map(r => ({ ...r, totalLanes: ends.length }));
   };
 
-  // Build per-area booking lists
   const areaBookings = {};
   AREAS.forEach(a => { areaBookings[a.id] = []; });
   bookings.forEach(b => b.areas.forEach(aid => { if (areaBookings[aid]) areaBookings[aid].push(b); }));
 
   const hours = Array.from({ length: END_H - START_H + 1 }, (_, i) => START_H + i);
 
-  // Detect any overlap across all areas
   const hasAnyOverlap = bookings.some(b =>
     bookings.some(o => o.id !== b.id && b.date === o.date &&
       overlap(b.startTime, b.endTime, o.startTime, o.endTime) &&
@@ -576,7 +583,7 @@ function TimelineChart({ bookings }) {
         )}
       </div>
       {bookings.length === 0 ? (
-        <div className="flex-1 flex items-center justify-center text-slate-400 text-sm py-12">予約なし</div>
+        <div className="flex-1 flex items-center justify-center text-slate-400 text-sm py-12">登録なし</div>
       ) : (
         <div className="overflow-auto flex-1">
           <div style={{ display:'flex', minWidth: LABEL_W + AREAS.length * COL_W }}>
@@ -640,7 +647,6 @@ function TimelineChart({ bookings }) {
                         const h = Math.max(hFromSpan(b.startTime, b.endTime) - 2, 4);
                         const bw = (COL_W - 2) / totalLanes;
                         const bx = 1 + lane * bw;
-                        // check overlap for this booking in this area
                         const isOvl = areaBookings[area.id].some(o =>
                           o.id !== b.id && overlap(b.startTime, b.endTime, o.startTime, o.endTime)
                         );
@@ -687,9 +693,9 @@ function App() {
   const [selectedDate, setSelectedDate] = useState(todayStr);
   const [month, setMonth] = useState(() => new Date());
   const [showForm, setShowForm] = useState(false);
+  const [editTarget, setEditTarget] = useState(null);
   const [delTarget, setDelTarget] = useState(null);
 
-  // Firestoreのリアルタイム同期
   useEffect(() => {
     const unsubscribe = db.collection('bookings')
       .orderBy('createdAt', 'asc')
@@ -708,11 +714,17 @@ function App() {
     catch(e) { alert('保存に失敗しました: ' + e.message); }
   }, []);
 
+  const handleUpdate = useCallback(async (id, data) => {
+    try { await db.collection('bookings').doc(id).update(data); }
+    catch(e) { alert('更新に失敗しました: ' + e.message); }
+  }, []);
+
   const confirmDelete = useCallback(async () => {
     try { await db.collection('bookings').doc(delTarget.id).delete(); }
     catch(e) { alert('削除に失敗しました: ' + e.message); }
     setDelTarget(null);
   }, [delTarget]);
+
   const changeMonth = delta => setMonth(p => {
     const d = new Date(p); d.setMonth(d.getMonth()+delta); return d;
   });
@@ -741,10 +753,10 @@ function App() {
         <div className="max-w-6xl mx-auto px-4 py-4 flex items-center justify-between flex-wrap gap-3">
           <div>
             <h1 className="text-xl sm:text-2xl font-black tracking-tight">
-              🏢 リベ名古屋オフィス 予約マップ
+              🏢 リベ名古屋オフィス コミュニケーションツール
             </h1>
-            <p className="text-slate-300 text-sm mt-0.5 hidden sm:block">
-              エリア使用予定を登録・共有して、主催者同士で調整しましょう
+            <p className="text-red-400 text-xs sm:text-sm mt-1 font-semibold">
+              ※ これは予約システムではありません。オフ会の参加場所を見える化し、主催者同士のコミュニケーションを円滑にするためのツールです。
             </p>
           </div>
           <div className="flex items-center gap-2 sm:gap-3">
@@ -753,7 +765,7 @@ function App() {
             </span>
             <button onClick={()=>setShowForm(true)}
               className="bg-amber-500 hover:bg-amber-400 active:bg-amber-600 text-white font-black px-4 py-2 rounded-xl transition shadow-lg text-sm sm:text-base whitespace-nowrap">
-              + 予約を追加
+              + 登録
             </button>
           </div>
         </div>
@@ -773,6 +785,11 @@ function App() {
             </div>
           </div>
 
+          {/* Timeline chart */}
+          <div className="lg:col-span-3">
+            <TimelineChart bookings={selBookings}/>
+          </div>
+
           {/* Day panel */}
           <div className="lg:col-span-2">
             <div className="bg-white rounded-2xl shadow-lg overflow-hidden">
@@ -780,7 +797,7 @@ function App() {
                 <div>
                   <h2 className="text-lg font-black text-gray-900">{fmtDate(selectedDate)}</h2>
                   <p className="text-sm text-slate-400 mt-0.5 font-medium">
-                    {selBookings.length>0 ? `${selBookings.length}件の予約` : '予約はありません'}
+                    {selBookings.length>0 ? `${selBookings.length}件の登録` : '登録はありません'}
                   </p>
                 </div>
                 <div className="flex items-center gap-2 flex-wrap">
@@ -789,7 +806,7 @@ function App() {
                   )}
                   <button onClick={()=>setShowForm(true)}
                     className="bg-slate-800 hover:bg-slate-700 text-white text-sm font-bold px-4 py-2 rounded-xl transition whitespace-nowrap">
-                    + 予約を追加
+                    + 登録
                   </button>
                 </div>
               </div>
@@ -797,26 +814,22 @@ function App() {
                 {selBookings.length === 0 ? (
                   <div className="text-center py-16 text-slate-400">
                     <div className="text-5xl mb-3">📅</div>
-                    <p className="text-sm font-medium">この日の予約はまだありません</p>
+                    <p className="text-sm font-medium">この日の登録はまだありません</p>
                     <button onClick={()=>setShowForm(true)}
                       className="mt-4 text-sm text-slate-500 hover:text-slate-800 underline underline-offset-2 transition">
-                      最初の予約を追加する
+                      最初の登録をする
                     </button>
                   </div>
                 ) : (
                   <div className="space-y-4">
                     {selBookings.map(b=>(
-                      <BookingCard key={b.id} booking={b} allBookings={bookings} onDelete={setDelTarget}/>
+                      <BookingCard key={b.id} booking={b} allBookings={bookings}
+                        onEdit={setEditTarget} onDelete={setDelTarget}/>
                     ))}
                   </div>
                 )}
               </div>
             </div>
-          </div>
-
-          {/* Timeline chart */}
-          <div className="lg:col-span-3">
-            <TimelineChart bookings={selBookings}/>
           </div>
         </div>
       </main>
@@ -827,7 +840,17 @@ function App() {
           initialDate={selectedDate}
           bookings={bookings}
           onSave={handleSave}
+          onUpdate={handleUpdate}
           onClose={()=>setShowForm(false)}
+        />
+      )}
+      {editTarget && (
+        <BookingForm
+          initialData={editTarget}
+          bookings={bookings}
+          onSave={handleSave}
+          onUpdate={handleUpdate}
+          onClose={()=>setEditTarget(null)}
         />
       )}
       {delTarget && (
