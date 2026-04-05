@@ -430,7 +430,10 @@ function BookingCard({ booking, allBookings, onDelete }) {
       <div className="flex items-start justify-between gap-2">
         <div className="min-w-0">
           <div className="flex items-center gap-2 flex-wrap">
-            <span className="font-black text-gray-900">{booking.hostName}</span>
+            <a href={booking.profileUrl} target="_blank" rel="noopener noreferrer"
+              className="font-black text-gray-900 hover:text-blue-600 hover:underline underline-offset-2 transition">
+              {booking.hostName}
+            </a>
             {isDup && (
               <span className="text-xs bg-orange-100 text-orange-600 px-2 py-0.5 rounded-full font-bold whitespace-nowrap">
                 ⚠ 重複あり
@@ -652,9 +655,11 @@ function TimelineChart({ bookings }) {
                               display:'flex', flexDirection:'column',
                               padding:'2px 3px',
                             }}>
-                            <span style={{ fontSize:7, fontWeight:800, color:'white', lineHeight:1.2, overflow:'hidden', whiteSpace:'nowrap', textOverflow:'ellipsis' }}>
+                            <a href={b.profileUrl} target="_blank" rel="noopener noreferrer"
+                              style={{ fontSize:7, fontWeight:800, color:'white', lineHeight:1.2, overflow:'hidden', whiteSpace:'nowrap', textOverflow:'ellipsis', textDecoration:'none' }}
+                              onClick={e=>e.stopPropagation()}>
                               {b.hostName}
-                            </span>
+                            </a>
                             {h > 24 && (
                               <span style={{ fontSize:6, color:'rgba(255,255,255,0.85)', lineHeight:1.2, whiteSpace:'nowrap' }}>
                                 {b.startTime}〜{b.endTime}
