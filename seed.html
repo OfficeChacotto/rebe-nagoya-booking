@@ -1,0 +1,94 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8"/>
+  <title>Seed Data</title>
+  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
+</head>
+<body>
+<p id="msg">投入中...</p>
+<script>
+firebase.initializeApp({
+  apiKey:            "AIzaSyAH9BWp9z53g_J7dS7aQ1pD2K61IRT8zEo",
+  authDomain:        "rebe-nagoya-booking.firebaseapp.com",
+  projectId:         "rebe-nagoya-booking",
+  storageBucket:     "rebe-nagoya-booking.firebasestorage.app",
+  messagingSenderId: "216134188492",
+  appId:             "1:216134188492:web:1674d5b797e5dbee413169",
+});
+const db = firebase.firestore();
+
+const DATA = [
+  {
+    date:'2026-04-25', startTime:'10:00', endTime:'12:00',
+    hostName:'claude cowork', profileUrl:'https://community.rebe.city/claude-cowork',
+    attendees:15, hasProjector:false,
+    areas:['area_cafe'],
+    createdAt: new Date('2026-04-01T00:00:00Z').toISOString(),
+  },
+  {
+    date:'2026-04-25', startTime:'11:00', endTime:'12:00',
+    hostName:'Code導入サポート', profileUrl:'https://community.rebe.city/code-support',
+    attendees:10, hasProjector:true,
+    areas:['area_photo'],
+    createdAt: new Date('2026-04-01T00:01:00Z').toISOString(),
+  },
+  {
+    date:'2026-04-25', startTime:'11:00', endTime:'17:00',
+    hostName:'ウィングスパンオフ会', profileUrl:'https://community.rebe.city/wingspan',
+    attendees:20, hasProjector:false,
+    areas:['area_community'],
+    createdAt: new Date('2026-04-01T00:02:00Z').toISOString(),
+  },
+  {
+    date:'2026-04-25', startTime:'13:00', endTime:'15:00',
+    hostName:'中国輸入オフ会', profileUrl:'https://community.rebe.city/china-import',
+    attendees:25, hasProjector:false,
+    areas:['area_public'],
+    createdAt: new Date('2026-04-01T00:03:00Z').toISOString(),
+  },
+  {
+    date:'2026-04-25', startTime:'13:00', endTime:'15:00',
+    hostName:'名刺も作るよオフ会', profileUrl:'https://community.rebe.city/meishi',
+    attendees:12, hasProjector:false,
+    areas:['area_cafe'],
+    createdAt: new Date('2026-04-01T00:04:00Z').toISOString(),
+  },
+  {
+    date:'2026-04-25', startTime:'13:00', endTime:'15:00',
+    hostName:'価値観マップを作ろう', profileUrl:'https://community.rebe.city/value-map',
+    attendees:8, hasProjector:true,
+    areas:['area_photo'],
+    createdAt: new Date('2026-04-01T00:05:00Z').toISOString(),
+  },
+  {
+    date:'2026-04-25', startTime:'13:30', endTime:'17:30',
+    hostName:'東海ZDKオフ会', profileUrl:'https://community.rebe.city/tokai-zdk',
+    attendees:30, hasProjector:true,
+    areas:['area_relax'],
+    createdAt: new Date('2026-04-01T00:06:00Z').toISOString(),
+  },
+  {
+    date:'2026-04-25', startTime:'14:00', endTime:'16:00',
+    hostName:'AIプログラミングオフ会', profileUrl:'https://community.rebe.city/ai-programming',
+    attendees:20, hasProjector:true,
+    areas:['area_community'],
+    createdAt: new Date('2026-04-01T00:07:00Z').toISOString(),
+  },
+];
+
+(async () => {
+  const batch = db.batch();
+  DATA.forEach(d => {
+    const ref = db.collection('bookings').doc();
+    batch.set(ref, d);
+  });
+  await batch.commit();
+  document.getElementById('msg').textContent = '✅ 8件のテストデータを投入しました！このタブを閉じてください。';
+})().catch(e => {
+  document.getElementById('msg').textContent = '❌ エラー: ' + e.message;
+});
+</script>
+</body>
+</html>
