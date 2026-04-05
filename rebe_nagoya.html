@@ -219,6 +219,7 @@ function BookingForm({ initialDate, initialData, bookings, onSave, onUpdate, onC
     date:         initialData.date,
     startTime:    initialData.startTime,
     endTime:      initialData.endTime,
+    eventTitle:   initialData.eventTitle || '',
     hostName:     initialData.hostName,
     profileUrl:   initialData.profileUrl,
     attendees:    String(initialData.attendees),
@@ -228,6 +229,7 @@ function BookingForm({ initialDate, initialData, bookings, onSave, onUpdate, onC
     date:         initialDate || todayStr(),
     startTime:    '10:00',
     endTime:      '12:00',
+    eventTitle:   '',
     hostName:     '',
     profileUrl:   'https://community.rebe.city/',
     attendees:    '',
@@ -243,6 +245,7 @@ function BookingForm({ initialDate, initialData, bookings, onSave, onUpdate, onC
   const validate = () => {
     const e = {};
     if (!form.date)                                    e.date        = '日付を選択してください';
+    if (!form.eventTitle.trim())                       e.eventTitle  = 'オフ会タイトルを入力してください';
     if (!form.hostName.trim())                         e.hostName    = '主催者名を入力してください';
     if (!form.profileUrl.startsWith('https://'))       e.profileUrl  = 'https:// で始まるURLを入力してください';
     if (!form.attendees || Number(form.attendees) < 1) e.attendees   = '参加人数を入力してください（1以上）';
@@ -268,7 +271,7 @@ function BookingForm({ initialDate, initialData, bookings, onSave, onUpdate, onC
   };
 
   const handleSubmit = () => {
-    setTouched({date:1,hostName:1,profileUrl:1,attendees:1,hasProjector:1,areas:1,endTime:1});
+    setTouched({date:1,eventTitle:1,hostName:1,profileUrl:1,attendees:1,hasProjector:1,areas:1,endTime:1});
     if (!isValid) return;
     const dups = bookings.filter(b =>
       b.date === form.date &&
@@ -283,6 +286,7 @@ function BookingForm({ initialDate, initialData, bookings, onSave, onUpdate, onC
   const doSave = () => {
     const data = {
       date:form.date, startTime:form.startTime, endTime:form.endTime,
+      eventTitle:form.eventTitle.trim(),
       hostName:form.hostName.trim(), profileUrl:form.profileUrl.trim(),
       attendees:Number(form.attendees), hasProjector:form.hasProjector,
       areas:form.areas,
@@ -336,6 +340,14 @@ function BookingForm({ initialDate, initialData, bookings, onSave, onUpdate, onC
               </select>
               {touched.endTime && errs.endTime && <p className="text-red-500 text-xs mt-1">{errs.endTime}</p>}
             </div>
+          </div>
+
+          {/* Event Title */}
+          <div>
+            <label className="block text-sm font-semibold text-gray-700 mb-1">オフ会タイトル <span className="text-red-500">*</span></label>
+            <input type="text" value={form.eventTitle} placeholder="例: AIプログラミングオフ会"
+              onChange={e=>{setF('eventTitle',e.target.value);touch('eventTitle');}} className={inp}/>
+            {touched.eventTitle && errs.eventTitle && <p className="text-red-500 text-xs mt-1">{errs.eventTitle}</p>}
           </div>
 
           {/* Host */}
@@ -440,8 +452,9 @@ function BookingCard({ booking, allBookings, onEdit, onDelete }) {
           <div className="flex items-center gap-2 flex-wrap">
             <a href={booking.profileUrl} target="_blank" rel="noopener noreferrer"
               className="font-black text-gray-900 hover:text-blue-600 hover:underline underline-offset-2 transition">
-              {booking.hostName}
+              {booking.eventTitle || booking.hostName}
             </a>
+            <span className="text-xs text-slate-400 font-medium">{booking.hostName}</span>
             {isDup && (
               <span className="text-xs bg-orange-100 text-orange-600 px-2 py-0.5 rounded-full font-bold whitespace-nowrap">
                 ⚠ 重複あり
@@ -652,7 +665,7 @@ function TimelineChart({ bookings }) {
                         );
                         return (
                           <div key={`${b.id}-${area.id}`}
-                            title={`${b.hostName}\n${b.startTime}〜${b.endTime}`}
+                            title={`${b.eventTitle || b.hostName}\n主催: ${b.hostName}\n${b.startTime}〜${b.endTime}`}
                             style={{
                               position:'absolute', top: y+1, left: bx, width: bw-2, height: h,
                               background: area.color, opacity: 0.88,
@@ -664,7 +677,7 @@ function TimelineChart({ bookings }) {
                             <a href={b.profileUrl} target="_blank" rel="noopener noreferrer"
                               style={{ fontSize:7, fontWeight:800, color:'white', lineHeight:1.2, overflow:'hidden', whiteSpace:'nowrap', textOverflow:'ellipsis', textDecoration:'none' }}
                               onClick={e=>e.stopPropagation()}>
-                              {b.hostName}
+                              {b.eventTitle || b.hostName}
                             </a>
                             {h > 24 && (
                               <span style={{ fontSize:6, color:'rgba(255,255,255,0.85)', lineHeight:1.2, whiteSpace:'nowrap' }}>
@@ -756,7 +769,7 @@ function App() {
               🏢 リベ名古屋オフィス コミュニケーションツール
             </h1>
             <p className="text-red-400 text-xs sm:text-sm mt-1 font-semibold">
-              ※ これは予約システムではありません。オフ会の参加場所を見える化し、主催者同士のコミュニケーションを円滑にするためのツールです。
+              ※ これは予約システムではありません。オフ会の開催希望場所を見える化し、主催者同士のコミュニケーションを円滑にするためのツールです。
             </p>
           </div>
           <div className="flex items-center gap-2 sm:gap-3">
