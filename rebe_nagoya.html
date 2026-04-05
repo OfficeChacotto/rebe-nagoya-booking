@@ -525,6 +525,156 @@ function Calendar({ bookings, selected, onSelect, month, onMonth }) {
   );
 }
 
+// ─── TIMELINE CHART ───────────────────────────────────────────
+function TimelineChart({ bookings }) {
+  const START_H = 8, END_H = 22;
+  const SLOT_H  = 18;  // px per 30min
+  const COL_W   = 72;  // px per area column
+  const LABEL_W = 38;  // time label width
+  const HEADER_H = 40;
+  const chartH  = (END_H - START_H) * 2 * SLOT_H;
+
+  const yFromTime = t => (toMin(t) - START_H * 60) / 30 * SLOT_H;
+  const hFromSpan = (s, e) => (toMin(e) - toMin(s)) / 30 * SLOT_H;
+
+  // Assign lanes within each area to handle overlaps
+  const getLanes = bks => {
+    const sorted = [...bks].sort((a,b)=>toMin(a.startTime)-toMin(b.startTime));
+    const ends = [];
+    const result = sorted.map(b => {
+      let lane = ends.findIndex(end => end <= toMin(b.startTime));
+      if (lane === -1) { lane = ends.length; ends.push(0); }
+      ends[lane] = toMin(b.endTime);
+      return { booking: b, lane };
+    });
+    return result.map(r => ({ ...r, totalLanes: ends.length }));
+  };
+
+  // Build per-area booking lists
+  const areaBookings = {};
+  AREAS.forEach(a => { areaBookings[a.id] = []; });
+  bookings.forEach(b => b.areas.forEach(aid => { if (areaBookings[aid]) areaBookings[aid].push(b); }));
+
+  const hours = Array.from({ length: END_H - START_H + 1 }, (_, i) => START_H + i);
+
+  // Detect any overlap across all areas
+  const hasAnyOverlap = bookings.some(b =>
+    bookings.some(o => o.id !== b.id && b.date === o.date &&
+      overlap(b.startTime, b.endTime, o.startTime, o.endTime) &&
+      areaOvl(b.areas, o.areas))
+  );
+
+  return (
+    <div className="bg-white rounded-2xl shadow-lg overflow-hidden flex flex-col">
+      <div className="px-4 py-3 border-b border-slate-100 flex items-center justify-between flex-shrink-0">
+        <h3 className="font-black text-gray-900 text-sm">タイムライン</h3>
+        {hasAnyOverlap && (
+          <span className="text-xs bg-orange-100 text-orange-600 px-2 py-0.5 rounded-full font-bold">⚠ 重複あり</span>
+        )}
+      </div>
+      {bookings.length === 0 ? (
+        <div className="flex-1 flex items-center justify-center text-slate-400 text-sm py-12">予約なし</div>
+      ) : (
+        <div className="overflow-auto flex-1">
+          <div style={{ display:'flex', minWidth: LABEL_W + AREAS.length * COL_W }}>
+            {/* Time axis */}
+            <div style={{ width: LABEL_W, flexShrink: 0 }}>
+              <div style={{ height: HEADER_H }}/>
+              <div style={{ position:'relative', height: chartH }}>
+                {hours.map(h => (
+                  <div key={h} style={{
+                    position:'absolute', top: (h - START_H) * 2 * SLOT_H - 7,
+                    right: 4, fontSize: 9, color:'#94a3b8', fontWeight:700,
+                    whiteSpace:'nowrap',
+                  }}>
+                    {String(h).padStart(2,'0')}:00
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* Area columns */}
+            <div style={{ flex: 1, display:'flex' }}>
+              {AREAS.map((area, aIdx) => {
+                const lanes = getLanes(areaBookings[area.id]);
+                const maxLanes = lanes.length > 0 ? Math.max(...lanes.map(l => l.totalLanes)) : 1;
+
+                return (
+                  <div key={area.id} style={{
+                    width: COL_W, flexShrink: 0, display:'flex', flexDirection:'column',
+                    borderLeft: aIdx > 0 ? '1px solid #f1f5f9' : 'none',
+                  }}>
+                    {/* Header */}
+                    <div style={{
+                      height: HEADER_H, display:'flex', alignItems:'center', justifyContent:'center',
+                      fontSize: 8, fontWeight: 800, color: area.color,
+                      textAlign:'center', padding:'0 2px', lineHeight:1.2,
+                      borderBottom:'2px solid', borderColor: area.color,
+                      background: area.color + '18',
+                    }}>
+                      {area.name}
+                    </div>
+
+                    {/* Grid + bars */}
+                    <div style={{ position:'relative', height: chartH, background: aIdx%2===0?'#fafafa':'#fff' }}>
+                      {/* Hour lines */}
+                      {hours.map(h => (
+                        <div key={h} style={{
+                          position:'absolute', top:(h-START_H)*2*SLOT_H, left:0, right:0,
+                          borderTop: h===START_H ? 'none' : '1px solid #e2e8f0',
+                        }}/>
+                      ))}
+                      {/* 30min dashed lines */}
+                      {hours.slice(0,-1).map(h => (
+                        <div key={`d${h}`} style={{
+                          position:'absolute', top:(h-START_H)*2*SLOT_H+SLOT_H, left:0, right:0,
+                          borderTop:'1px dashed #f1f5f9',
+                        }}/>
+                      ))}
+                      {/* Booking bars */}
+                      {lanes.map(({ booking: b, lane, totalLanes }) => {
+                        const y = yFromTime(b.startTime);
+                        const h = Math.max(hFromSpan(b.startTime, b.endTime) - 2, 4);
+                        const bw = (COL_W - 2) / totalLanes;
+                        const bx = 1 + lane * bw;
+                        // check overlap for this booking in this area
+                        const isOvl = areaBookings[area.id].some(o =>
+                          o.id !== b.id && overlap(b.startTime, b.endTime, o.startTime, o.endTime)
+                        );
+                        return (
+                          <div key={`${b.id}-${area.id}`}
+                            title={`${b.hostName}\n${b.startTime}〜${b.endTime}`}
+                            style={{
+                              position:'absolute', top: y+1, left: bx, width: bw-2, height: h,
+                              background: area.color, opacity: 0.88,
+                              borderRadius: 4, overflow:'hidden', cursor:'default',
+                              boxShadow: isOvl ? `0 0 0 2px #f97316` : 'none',
+                              display:'flex', flexDirection:'column',
+                              padding:'2px 3px',
+                            }}>
+                            <span style={{ fontSize:7, fontWeight:800, color:'white', lineHeight:1.2, overflow:'hidden', whiteSpace:'nowrap', textOverflow:'ellipsis' }}>
+                              {b.hostName}
+                            </span>
+                            {h > 24 && (
+                              <span style={{ fontSize:6, color:'rgba(255,255,255,0.85)', lineHeight:1.2, whiteSpace:'nowrap' }}>
+                                {b.startTime}〜{b.endTime}
+                              </span>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ─── APP ──────────────────────────────────────────────────────
 function App() {
   const [bookings, setBookings] = useState([]);
@@ -606,7 +756,7 @@ function App() {
 
       {/* ── Main ── */}
       <main className="max-w-6xl mx-auto px-4 py-6">
-        <div className="grid grid-cols-1 lg:grid-cols-5 gap-6">
+        <div className="grid grid-cols-1 lg:grid-cols-7 gap-6">
           {/* Calendar + Floor image */}
           <div className="lg:col-span-2 flex flex-col gap-6">
             <Calendar
@@ -619,7 +769,7 @@ function App() {
           </div>
 
           {/* Day panel */}
-          <div className="lg:col-span-3">
+          <div className="lg:col-span-2">
             <div className="bg-white rounded-2xl shadow-lg overflow-hidden">
               <div className="px-5 py-4 border-b border-slate-100 flex items-start justify-between gap-3 flex-wrap">
                 <div>
@@ -657,6 +807,11 @@ function App() {
                 )}
               </div>
             </div>
+          </div>
+
+          {/* Timeline chart */}
+          <div className="lg:col-span-3">
+            <TimelineChart bookings={selBookings}/>
           </div>
         </div>
       </main>
