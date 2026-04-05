@@ -1,0 +1,684 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>リベ名古屋オフィス 予約マップ</title>
+  <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
+  <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- Firebase -->
+  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
+  <style>
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Hiragino Sans', sans-serif; }
+    ::-webkit-scrollbar { width: 6px; }
+    ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 3px; }
+  </style>
+</head>
+<body class="bg-slate-50 text-gray-800">
+<div id="root"></div>
+<script type="text/babel">
+const { useState, useEffect, useCallback } = React;
+
+// ─── FIREBASE CONFIG ──────────────────────────────────────────
+// ※ Firebaseコンソールから取得した値に書き換えてください
+const FIREBASE_CONFIG = {
+  apiKey:            "YOUR_API_KEY",
+  authDomain:        "YOUR_PROJECT_ID.firebaseapp.com",
+  projectId:         "YOUR_PROJECT_ID",
+  storageBucket:     "YOUR_PROJECT_ID.appspot.com",
+  messagingSenderId: "YOUR_SENDER_ID",
+  appId:             "YOUR_APP_ID",
+};
+firebase.initializeApp(FIREBASE_CONFIG);
+const db = firebase.firestore();
+
+// ─── CONSTANTS ────────────────────────────────────────────────
+// SVG viewBox = 700×516, 画像も同サイズでフィット（preserveAspectRatio="none"）
+const AREAS = [
+  { id:'area_cafe',       name:'カフェエリア',              color:'#7C3AED', x:5,   y:100, w:128, h:172 },
+  { id:'area_photo',      name:'フォトスポット',            color:'#EA580C', x:143, y:110, w:112, h:158 },
+  { id:'area_public',     name:'パブリックエリア',          color:'#0D9488', x:282, y:162, w:240, h:268 },
+  { id:'area_relax',      name:'リラックスエリア',          color:'#334155', x:528, y:158, w:168, h:252 },
+  { id:'area_community',  name:'オープンコミュニティエリア', color:'#06B6D4', x:5,   y:290, w:250, h:220 },
+];
+
+const genTimes = (fromH, toH) => {
+  const r = [];
+  for (let m = fromH * 60; m <= toH * 60; m += 30) {
+    r.push(`${String(Math.floor(m/60)).padStart(2,'0')}:${m%60===0?'00':'30'}`);
+  }
+  return r;
+};
+const ALL_TIMES   = genTimes(8, 22);
+const START_TIMES = ALL_TIMES.slice(0, -1);
+const END_TIMES   = ALL_TIMES.slice(1);
+const STORAGE_KEY = 'rebe_nagoya_bookings';
+const MAX_ATTENDEES = 90;
+const DOW = ['日','月','火','水','木','金','土'];
+
+// ─── UTILS ───────────────────────────────────────────────────
+const toMin   = s => { const [h,m]=s.split(':').map(Number); return h*60+m; };
+const overlap = (s1,e1,s2,e2) => toMin(s1) < toMin(e2) && toMin(e1) > toMin(s2);
+const areaOvl = (a,b) => a.some(x=>b.includes(x));
+const todayStr = () => new Date().toISOString().slice(0,10);
+const fmtDate  = d => { const x=new Date(d+'T00:00:00'); return `${x.getFullYear()}年${x.getMonth()+1}月${x.getDate()}日`; };
+
+// ─── FLOOR PLAN ───────────────────────────────────────────────
+function FloorPlan({ selected, onToggle }) {
+  const [hovered, setHovered] = useState(null);
+
+  const renderLabel = (area) => {
+    const cx = area.x + area.w/2;
+    const cy = area.y + area.h/2;
+    const isSel = selected.includes(area.id);
+    // split long names
+    let lines;
+    if (area.name === 'オープンコミュニティエリア') lines = ['オープン','コミュニティ','エリア'];
+    else if (area.name === 'パブリックエリア') lines = ['パブリック','エリア'];
+    else if (area.name === 'リラックスエリア') lines = ['リラックス','エリア'];
+    else if (area.name === 'パーソナルエリア') lines = ['パーソナル','エリア'];
+    else lines = [area.name];
+    const lineH = 14;
+    const totalH = lines.length * lineH;
+    const baseY = cy - totalH/2 + lineH/2 + (isSel ? -8 : 0);
+    return (
+      <g key={`label-${area.id}`} style={{pointerEvents:'none'}}>
+        {/* テキスト背景（視認性向上） */}
+        {lines.map((l,i) => (
+          <text key={`bg-${i}`} x={cx} y={baseY+i*lineH}
+            textAnchor="middle" dominantBaseline="middle"
+            fontSize="10" fontWeight="900"
+            stroke="white" strokeWidth="3" strokeLinejoin="round"
+            style={{userSelect:'none'}}>
+            {l}
+          </text>
+        ))}
+        {lines.map((l,i) => (
+          <text key={i} x={cx} y={baseY+i*lineH}
+            textAnchor="middle" dominantBaseline="middle"
+            fontSize="10" fontWeight="900" fill={area.color}
+            style={{userSelect:'none'}}>
+            {l}
+          </text>
+        ))}
+        {isSel && (
+          <text x={cx} y={baseY+lines.length*lineH+4}
+            textAnchor="middle" dominantBaseline="middle"
+            fontSize="16" style={{userSelect:'none'}}>✓</text>
+        )}
+      </g>
+    );
+  };
+
+  return (
+    <div className="relative">
+      <svg viewBox="0 0 700 516" className="w-full rounded-xl border-2 border-slate-200"
+        style={{maxHeight:'300px', background:'#e2e8f0'}}>
+        {/* 実際の平面図画像を背景として使用 */}
+        <image href="floorplan.png" x="0" y="0" width="700" height="516"
+          preserveAspectRatio="none"/>
+        {AREAS.map(area => {
+          const isSel = selected.includes(area.id);
+          const isHov = hovered === area.id;
+          return (
+            <g key={area.id}
+              onClick={() => onToggle && onToggle(area.id)}
+              onMouseEnter={() => setHovered(area.id)}
+              onMouseLeave={() => setHovered(null)}
+              style={{cursor: onToggle ? 'pointer' : 'default'}}>
+              <rect x={area.x} y={area.y} width={area.w} height={area.h}
+                fill={area.color}
+                fillOpacity={isSel ? 0.50 : isHov ? 0.28 : 0.12}
+                stroke={area.color}
+                strokeWidth={isSel ? 3.5 : isHov ? 2.5 : 2}
+                rx="4"/>
+              {renderLabel(area)}
+            </g>
+          );
+        })}
+      </svg>
+      {hovered && onToggle && (
+        <div className="absolute top-2 left-1/2 -translate-x-1/2 bg-slate-800 text-white text-xs px-2.5 py-1 rounded-lg pointer-events-none z-10 whitespace-nowrap shadow-lg">
+          {AREAS.find(a=>a.id===hovered)?.name}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── DUPLICATE CONFIRM MODAL ──────────────────────────────────
+function DuplicateModal({ dups, newBooking, onConfirm, onCancel }) {
+  return (
+    <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4">
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg overflow-hidden">
+        <div className="bg-red-600 text-white px-6 py-4 flex items-center gap-3">
+          <span className="text-2xl">⚠</span>
+          <h2 className="text-lg font-black">エリアの重複があります</h2>
+        </div>
+        <div className="p-5 space-y-3 max-h-[55vh] overflow-y-auto">
+          <p className="text-red-700 font-semibold text-sm">以下の予約とエリアが重複しています：</p>
+          {dups.map(dup => {
+            const dupAreas = dup.areas.filter(a=>newBooking.areas.includes(a))
+              .map(a=>AREAS.find(x=>x.id===a)?.name).join('・');
+            return (
+              <div key={dup.id} className="bg-red-50 border border-red-200 rounded-xl p-4 space-y-1.5">
+                <p className="font-bold text-gray-900">{dup.hostName} さん</p>
+                <p className="text-sm text-gray-500">{dup.startTime}〜{dup.endTime}</p>
+                <p className="text-sm text-red-600 font-semibold">重複エリア：{dupAreas}</p>
+                <a href={dup.profileUrl} target="_blank" rel="noopener noreferrer"
+                  className="text-sm text-blue-600 hover:underline block">プロフィールを見る →</a>
+                <div className="bg-amber-50 border border-amber-200 rounded-lg p-2.5 mt-1">
+                  <p className="text-sm text-gray-700">
+                    場所が重なっています。<strong>{dup.hostName}</strong> さんのプロフィールからご連絡・調整をお願いします 🙏
+                  </p>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+        <div className="p-4 border-t flex gap-3">
+          <button onClick={onCancel}
+            className="flex-1 py-3 bg-gray-100 hover:bg-gray-200 rounded-xl font-semibold text-gray-700 transition text-sm">
+            キャンセルして調整する
+          </button>
+          <button onClick={onConfirm}
+            className="flex-1 py-3 bg-red-600 hover:bg-red-700 rounded-xl font-black text-white transition text-sm">
+            このまま登録する
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── DELETE CONFIRM ───────────────────────────────────────────
+function DeleteDialog({ booking, onConfirm, onCancel }) {
+  return (
+    <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4">
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm p-6 space-y-4">
+        <h3 className="text-lg font-black text-gray-900">予約を削除しますか？</h3>
+        <div className="bg-slate-50 rounded-xl p-4 space-y-1">
+          <p className="font-bold text-gray-800">{booking.hostName} さん</p>
+          <p className="text-sm text-slate-500">{fmtDate(booking.date)}</p>
+          <p className="text-sm text-slate-500">{booking.startTime}〜{booking.endTime}</p>
+        </div>
+        <div className="flex gap-3">
+          <button onClick={onCancel}
+            className="flex-1 py-2.5 border-2 border-gray-200 rounded-xl text-gray-600 hover:bg-gray-50 font-semibold transition">
+            キャンセル
+          </button>
+          <button onClick={onConfirm}
+            className="flex-1 py-2.5 bg-red-500 hover:bg-red-600 rounded-xl text-white font-black transition">
+            削除する
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── BOOKING FORM ─────────────────────────────────────────────
+function BookingForm({ initialDate, bookings, onSave, onClose }) {
+  const [form, setForm] = useState({
+    date:         initialDate || todayStr(),
+    startTime:    '10:00',
+    endTime:      '12:00',
+    hostName:     '',
+    profileUrl:   'https://community.rebe.city/',
+    attendees:    '',
+    hasProjector: null,
+    areas:        [],
+  });
+  const [touched, setTouched] = useState({});
+  const [pending, setPending] = useState(null);
+
+  const setF = (k,v) => setForm(p=>({...p,[k]:v}));
+  const touch = k => setTouched(p=>({...p,[k]:true}));
+
+  const validate = () => {
+    const e = {};
+    if (!form.date)                                    e.date        = '日付を選択してください';
+    if (!form.hostName.trim())                         e.hostName    = '主催者名を入力してください';
+    if (!form.profileUrl.startsWith('https://'))       e.profileUrl  = 'https:// で始まるURLを入力してください';
+    if (!form.attendees || Number(form.attendees) < 1) e.attendees   = '参加人数を入力してください（1以上）';
+    if (Number(form.attendees) > MAX_ATTENDEES)        e.attendees   = `${MAX_ATTENDEES}名以下にしてください`;
+    if (form.hasProjector === null)                    e.hasProjector= '選択してください';
+    if (form.areas.length === 0)                       e.areas       = 'エリアを1つ以上選択してください';
+    if (toMin(form.endTime) <= toMin(form.startTime))  e.endTime     = '終了時間は開始時間より後にしてください';
+    return e;
+  };
+  const errs = validate();
+  const isValid = Object.keys(errs).length === 0;
+
+  const handleStartChange = val => {
+    const newEnd = toMin(form.endTime) > toMin(val)
+      ? form.endTime
+      : END_TIMES.find(t=>toMin(t)>toMin(val)) || form.endTime;
+    setForm(p=>({...p, startTime:val, endTime:newEnd}));
+  };
+
+  const toggleArea = id => {
+    touch('areas');
+    setF('areas', form.areas.includes(id) ? form.areas.filter(a=>a!==id) : [...form.areas, id]);
+  };
+
+  const handleSubmit = () => {
+    setTouched({date:1,hostName:1,profileUrl:1,attendees:1,hasProjector:1,areas:1,endTime:1});
+    if (!isValid) return;
+    const dups = bookings.filter(b =>
+      b.date === form.date &&
+      overlap(form.startTime, form.endTime, b.startTime, b.endTime) &&
+      areaOvl(form.areas, b.areas)
+    );
+    if (dups.length) { setPending(dups); return; }
+    doSave();
+  };
+
+  const doSave = () => {
+    onSave({
+      date:form.date, startTime:form.startTime, endTime:form.endTime,
+      hostName:form.hostName.trim(), profileUrl:form.profileUrl.trim(),
+      attendees:Number(form.attendees), hasProjector:form.hasProjector,
+      areas:form.areas, createdAt:new Date().toISOString(),
+    });
+    onClose();
+  };
+
+  const inp = "w-full border border-gray-300 rounded-xl px-3 py-2.5 focus:outline-none focus:ring-2 focus:ring-slate-500 bg-white";
+
+  if (pending) return (
+    <DuplicateModal dups={pending} newBooking={form} onConfirm={doSave} onCancel={()=>setPending(null)}/>
+  );
+
+  return (
+    <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4">
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[92vh] flex flex-col">
+        {/* header */}
+        <div className="bg-gradient-to-r from-slate-900 to-slate-700 text-white px-6 py-4 rounded-t-2xl flex justify-between items-center flex-shrink-0">
+          <h2 className="text-xl font-black">予約を追加</h2>
+          <button onClick={onClose} className="text-slate-300 hover:text-white text-3xl leading-none w-8 h-8 flex items-center justify-center">&times;</button>
+        </div>
+
+        <div className="overflow-y-auto p-6 space-y-5 flex-1">
+          {/* Date */}
+          <div>
+            <label className="block text-sm font-semibold text-gray-700 mb-1">日付 <span className="text-red-500">*</span></label>
+            <input type="date" value={form.date}
+              onChange={e=>{setF('date',e.target.value);touch('date');}}
+              className={inp}/>
+            {touched.date && errs.date && <p className="text-red-500 text-xs mt-1">{errs.date}</p>}
+          </div>
+
+          {/* Times */}
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="block text-sm font-semibold text-gray-700 mb-1">開始時間 <span className="text-red-500">*</span></label>
+              <select value={form.startTime} onChange={e=>handleStartChange(e.target.value)} className={inp}>
+                {START_TIMES.map(t=><option key={t} value={t}>{t}</option>)}
+              </select>
+            </div>
+            <div>
+              <label className="block text-sm font-semibold text-gray-700 mb-1">終了時間 <span className="text-red-500">*</span></label>
+              <select value={form.endTime}
+                onChange={e=>{setF('endTime',e.target.value);touch('endTime');}} className={inp}>
+                {END_TIMES.filter(t=>toMin(t)>toMin(form.startTime)).map(t=><option key={t} value={t}>{t}</option>)}
+              </select>
+              {touched.endTime && errs.endTime && <p className="text-red-500 text-xs mt-1">{errs.endTime}</p>}
+            </div>
+          </div>
+
+          {/* Host */}
+          <div>
+            <label className="block text-sm font-semibold text-gray-700 mb-1">主催者名 <span className="text-red-500">*</span></label>
+            <input type="text" value={form.hostName} placeholder="例: 山田太郎"
+              onChange={e=>{setF('hostName',e.target.value);touch('hostName');}} className={inp}/>
+            {touched.hostName && errs.hostName && <p className="text-red-500 text-xs mt-1">{errs.hostName}</p>}
+          </div>
+
+          {/* Profile URL */}
+          <div>
+            <label className="block text-sm font-semibold text-gray-700 mb-1">
+              リベシティ プロフィールURL <span className="text-red-500">*</span>
+            </label>
+            <input type="url" value={form.profileUrl} placeholder="https://community.rebe.city/..."
+              onChange={e=>{setF('profileUrl',e.target.value);touch('profileUrl');}} className={inp}/>
+            {touched.profileUrl && errs.profileUrl && <p className="text-red-500 text-xs mt-1">{errs.profileUrl}</p>}
+          </div>
+
+          {/* Attendees */}
+          <div>
+            <label className="block text-sm font-semibold text-gray-700 mb-1">参加予定人数 <span className="text-red-500">*</span></label>
+            <input type="number" value={form.attendees} min="1" max="90" placeholder="1〜90"
+              onChange={e=>{setF('attendees',e.target.value);touch('attendees');}} className={inp}/>
+            {touched.attendees && errs.attendees && <p className="text-red-500 text-xs mt-1">{errs.attendees}</p>}
+            {Number(form.attendees) > MAX_ATTENDEES && (
+              <p className="text-orange-500 text-xs mt-1">⚠ 最大収容人数（90名）を超えています</p>
+            )}
+          </div>
+
+          {/* Projector */}
+          <div>
+            <label className="block text-sm font-semibold text-gray-700 mb-2">プロジェクター使用 <span className="text-red-500">*</span></label>
+            <div className="flex gap-8">
+              {[['はい',true],['いいえ',false]].map(([lbl,val])=>(
+                <label key={lbl} className="flex items-center gap-2 cursor-pointer select-none">
+                  <input type="radio" name="proj" checked={form.hasProjector===val}
+                    onChange={()=>{setF('hasProjector',val);touch('hasProjector');}}
+                    className="w-4 h-4 accent-slate-700"/>
+                  <span className="text-sm font-medium">{lbl}</span>
+                </label>
+              ))}
+            </div>
+            {touched.hasProjector && errs.hasProjector && <p className="text-red-500 text-xs mt-1">{errs.hasProjector}</p>}
+          </div>
+
+          {/* Areas */}
+          <div>
+            <label className="block text-sm font-semibold text-gray-700 mb-1.5">
+              使用エリア <span className="text-red-500">*</span>
+              <span className="text-gray-400 font-normal ml-2">（クリックで選択・複数可）</span>
+            </label>
+            <FloorPlan selected={form.areas} onToggle={toggleArea}/>
+            {form.areas.length > 0 && (
+              <div className="mt-2.5 flex flex-wrap gap-1.5">
+                {form.areas.map(id=>{
+                  const a=AREAS.find(x=>x.id===id);
+                  return (
+                    <span key={id} className="text-xs px-2.5 py-1 rounded-full text-white font-semibold"
+                      style={{background:a.color}}>{a.name}</span>
+                  );
+                })}
+              </div>
+            )}
+            {touched.areas && errs.areas && <p className="text-red-500 text-xs mt-1">{errs.areas}</p>}
+          </div>
+        </div>
+
+        {/* footer */}
+        <div className="p-5 pt-4 border-t flex gap-3 flex-shrink-0">
+          <button onClick={onClose}
+            className="flex-1 py-3 border-2 border-gray-200 rounded-xl text-gray-600 hover:bg-gray-50 font-semibold transition">
+            キャンセル
+          </button>
+          <button onClick={handleSubmit}
+            className={`flex-1 py-3 rounded-xl font-black text-white transition ${
+              isValid
+                ? 'bg-gradient-to-r from-slate-900 to-slate-700 hover:from-slate-800 hover:to-slate-600'
+                : 'bg-gray-300 cursor-not-allowed'
+            }`}>
+            登録する
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── BOOKING CARD ─────────────────────────────────────────────
+function BookingCard({ booking, allBookings, onDelete }) {
+  const areaObjs = booking.areas.map(id=>AREAS.find(a=>a.id===id)).filter(Boolean);
+  const isDup = allBookings.some(o =>
+    o.id !== booking.id && o.date === booking.date &&
+    overlap(booking.startTime, booking.endTime, o.startTime, o.endTime) &&
+    areaOvl(booking.areas, o.areas)
+  );
+  return (
+    <div className={`bg-white rounded-2xl border-2 ${isDup?'border-orange-400 shadow-orange-100':'border-slate-100'} shadow-md p-4 space-y-3 transition`}>
+      <div className="flex items-start justify-between gap-2">
+        <div className="min-w-0">
+          <div className="flex items-center gap-2 flex-wrap">
+            <span className="font-black text-gray-900">{booking.hostName}</span>
+            {isDup && (
+              <span className="text-xs bg-orange-100 text-orange-600 px-2 py-0.5 rounded-full font-bold whitespace-nowrap">
+                ⚠ 重複あり
+              </span>
+            )}
+          </div>
+          <p className="text-sm text-slate-500 mt-0.5 font-medium">{booking.startTime}〜{booking.endTime}</p>
+        </div>
+        <button onClick={()=>onDelete(booking)}
+          className="flex-shrink-0 text-xs text-red-400 hover:text-red-600 hover:bg-red-50 px-2.5 py-1 rounded-lg transition font-medium">
+          削除
+        </button>
+      </div>
+      <div className="flex flex-wrap gap-1.5">
+        {areaObjs.map(a=>(
+          <span key={a.id} className="text-xs px-2.5 py-0.5 rounded-full text-white font-semibold" style={{background:a.color}}>
+            {a.name}
+          </span>
+        ))}
+      </div>
+      <div className="flex flex-wrap gap-x-4 gap-y-1 text-sm text-slate-600">
+        <span>👥 {booking.attendees}名</span>
+        <span>{booking.hasProjector ? '📽 プロジェクターあり' : '📵 プロジェクターなし'}</span>
+      </div>
+      <a href={booking.profileUrl} target="_blank" rel="noopener noreferrer"
+        className="inline-flex items-center gap-1 text-xs text-blue-600 hover:text-blue-800 hover:underline">
+        プロフィールを見る →
+      </a>
+    </div>
+  );
+}
+
+// ─── CALENDAR ─────────────────────────────────────────────────
+function Calendar({ bookings, selected, onSelect, month, onMonth }) {
+  const Y = month.getFullYear(), M = month.getMonth();
+  const firstDow = new Date(Y,M,1).getDay();
+  const daysInMonth = new Date(Y,M+1,0).getDate();
+  const today = todayStr();
+  const ds = d => `${Y}-${String(M+1).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
+
+  const dayBks = d => bookings.filter(b=>b.date===ds(d));
+  const dayHasDup = d => {
+    const db = dayBks(d);
+    return db.some(b=>db.some(o=>o.id!==b.id&&overlap(b.startTime,b.endTime,o.startTime,o.endTime)&&areaOvl(b.areas,o.areas)));
+  };
+
+  return (
+    <div className="bg-white rounded-2xl shadow-lg p-5">
+      <div className="flex items-center justify-between mb-4">
+        <button onClick={()=>onMonth(-1)}
+          className="w-9 h-9 flex items-center justify-center rounded-xl hover:bg-slate-100 text-slate-600 text-xl font-black transition">‹</button>
+        <h2 className="font-black text-gray-900">{Y}年{M+1}月</h2>
+        <button onClick={()=>onMonth(1)}
+          className="w-9 h-9 flex items-center justify-center rounded-xl hover:bg-slate-100 text-slate-600 text-xl font-black transition">›</button>
+      </div>
+      <div className="grid grid-cols-7 mb-1.5">
+        {DOW.map((d,i)=>(
+          <div key={d} className={`text-center text-xs font-bold py-1 ${i===0?'text-red-500':i===6?'text-blue-500':'text-slate-400'}`}>{d}</div>
+        ))}
+      </div>
+      <div className="grid grid-cols-7 gap-0.5">
+        {Array.from({length:firstDow}).map((_,i)=><div key={`e${i}`}/>)}
+        {Array.from({length:daysInMonth},(_,i)=>i+1).map(d=>{
+          const dateStr = ds(d);
+          const cnt = dayBks(d).length;
+          const dup = cnt>0 && dayHasDup(d);
+          const isSel = selected===dateStr;
+          const isToday = dateStr===today;
+          const dow = (firstDow+d-1)%7;
+          return (
+            <button key={d} onClick={()=>onSelect(dateStr)}
+              className={`relative flex flex-col items-center justify-center rounded-xl py-1.5 transition min-h-[2.75rem]
+                ${isSel?'bg-slate-800 text-white shadow-md':'hover:bg-slate-50'}
+                ${isToday&&!isSel?'ring-2 ring-slate-400':''}
+                ${dow===0&&!isSel?'text-red-500':dow===6&&!isSel?'text-blue-500':'text-gray-700'}
+              `}>
+              <span className="text-xs font-bold leading-none">{d}</span>
+              {cnt>0 && (
+                <span className={`text-xs font-bold px-1 mt-0.5 rounded-full leading-none py-0.5
+                  ${isSel?'bg-amber-400 text-slate-900':'bg-blue-100 text-blue-700'}`}>
+                  {cnt}件
+                </span>
+              )}
+              {dup && (
+                <span className="absolute top-0.5 right-0.5 text-xs leading-none" title="重複あり">⚠</span>
+              )}
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+// ─── APP ──────────────────────────────────────────────────────
+function App() {
+  const [bookings, setBookings] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [selectedDate, setSelectedDate] = useState(todayStr);
+  const [month, setMonth] = useState(() => new Date());
+  const [showForm, setShowForm] = useState(false);
+  const [delTarget, setDelTarget] = useState(null);
+
+  // Firestoreのリアルタイム同期
+  useEffect(() => {
+    const unsubscribe = db.collection('bookings')
+      .orderBy('createdAt', 'asc')
+      .onSnapshot(
+        snap => {
+          setBookings(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+          setLoading(false);
+        },
+        err => { console.error(err); setLoading(false); }
+      );
+    return unsubscribe;
+  }, []);
+
+  const handleSave = useCallback(async b => {
+    try { await db.collection('bookings').add(b); }
+    catch(e) { alert('保存に失敗しました: ' + e.message); }
+  }, []);
+
+  const confirmDelete = useCallback(async () => {
+    try { await db.collection('bookings').doc(delTarget.id).delete(); }
+    catch(e) { alert('削除に失敗しました: ' + e.message); }
+    setDelTarget(null);
+  }, [delTarget]);
+  const changeMonth = delta => setMonth(p => {
+    const d = new Date(p); d.setMonth(d.getMonth()+delta); return d;
+  });
+
+  const selBookings = bookings
+    .filter(b=>b.date===selectedDate)
+    .sort((a,b)=>a.startTime.localeCompare(b.startTime));
+
+  const selHasDup = selBookings.some(b=>
+    selBookings.some(o=>o.id!==b.id&&overlap(b.startTime,b.endTime,o.startTime,o.endTime)&&areaOvl(b.areas,o.areas))
+  );
+
+  if (loading) return (
+    <div className="min-h-screen bg-slate-50 flex items-center justify-center">
+      <div className="text-center space-y-3">
+        <div className="text-4xl animate-spin">⏳</div>
+        <p className="text-slate-500 font-medium">データを読み込み中...</p>
+      </div>
+    </div>
+  );
+
+  return (
+    <div className="min-h-screen bg-slate-50">
+      {/* ── Header ── */}
+      <header className="bg-gradient-to-r from-slate-900 via-slate-800 to-slate-700 text-white shadow-2xl">
+        <div className="max-w-6xl mx-auto px-4 py-4 flex items-center justify-between flex-wrap gap-3">
+          <div>
+            <h1 className="text-xl sm:text-2xl font-black tracking-tight">
+              🏢 リベ名古屋オフィス 予約マップ
+            </h1>
+            <p className="text-slate-300 text-sm mt-0.5 hidden sm:block">
+              エリア使用予定を登録・共有して、主催者同士で調整しましょう
+            </p>
+          </div>
+          <div className="flex items-center gap-2 sm:gap-3">
+            <span className="bg-amber-500 text-white text-xs sm:text-sm font-black px-3 py-1.5 rounded-full whitespace-nowrap shadow">
+              最大90名収容
+            </span>
+            <button onClick={()=>setShowForm(true)}
+              className="bg-amber-500 hover:bg-amber-400 active:bg-amber-600 text-white font-black px-4 py-2 rounded-xl transition shadow-lg text-sm sm:text-base whitespace-nowrap">
+              + 予約を追加
+            </button>
+          </div>
+        </div>
+      </header>
+
+      {/* ── Main ── */}
+      <main className="max-w-6xl mx-auto px-4 py-6">
+        <div className="grid grid-cols-1 lg:grid-cols-5 gap-6">
+          {/* Calendar */}
+          <div className="lg:col-span-2">
+            <Calendar
+              bookings={bookings} selected={selectedDate}
+              onSelect={setSelectedDate} month={month} onMonth={changeMonth}
+            />
+          </div>
+
+          {/* Day panel */}
+          <div className="lg:col-span-3">
+            <div className="bg-white rounded-2xl shadow-lg overflow-hidden">
+              <div className="px-5 py-4 border-b border-slate-100 flex items-start justify-between gap-3 flex-wrap">
+                <div>
+                  <h2 className="text-lg font-black text-gray-900">{fmtDate(selectedDate)}</h2>
+                  <p className="text-sm text-slate-400 mt-0.5 font-medium">
+                    {selBookings.length>0 ? `${selBookings.length}件の予約` : '予約はありません'}
+                  </p>
+                </div>
+                <div className="flex items-center gap-2 flex-wrap">
+                  {selHasDup && (
+                    <span className="text-xs bg-orange-100 text-orange-600 px-3 py-1 rounded-full font-bold">⚠ 重複あり</span>
+                  )}
+                  <button onClick={()=>setShowForm(true)}
+                    className="bg-slate-800 hover:bg-slate-700 text-white text-sm font-bold px-4 py-2 rounded-xl transition whitespace-nowrap">
+                    + 予約を追加
+                  </button>
+                </div>
+              </div>
+              <div className="p-5">
+                {selBookings.length === 0 ? (
+                  <div className="text-center py-16 text-slate-400">
+                    <div className="text-5xl mb-3">📅</div>
+                    <p className="text-sm font-medium">この日の予約はまだありません</p>
+                    <button onClick={()=>setShowForm(true)}
+                      className="mt-4 text-sm text-slate-500 hover:text-slate-800 underline underline-offset-2 transition">
+                      最初の予約を追加する
+                    </button>
+                  </div>
+                ) : (
+                  <div className="space-y-4">
+                    {selBookings.map(b=>(
+                      <BookingCard key={b.id} booking={b} allBookings={bookings} onDelete={setDelTarget}/>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+      </main>
+
+      {/* ── Modals ── */}
+      {showForm && (
+        <BookingForm
+          initialDate={selectedDate}
+          bookings={bookings}
+          onSave={handleSave}
+          onClose={()=>setShowForm(false)}
+        />
+      )}
+      {delTarget && (
+        <DeleteDialog
+          booking={delTarget}
+          onConfirm={confirmDelete}
+          onCancel={()=>setDelTarget(null)}
+        />
+      )}
+    </div>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+</script>
+</body>
+</html>
